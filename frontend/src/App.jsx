@@ -86,7 +86,7 @@ const JourneyPlannerApp = () => {
     setError(null);
     
     try {
-      // ✅ 修正: バックエンドの絶対URLを使用
+      // 🔧 修正: バックエンドの絶対URLを使用（初期commit + バックエンド接続修正）
       const response = await fetch('https://planner-backend-ee00.onrender.com/api/generate-suggestions', {
         method: 'POST',
         headers: {
@@ -95,46 +95,25 @@ const JourneyPlannerApp = () => {
         body: JSON.stringify(formData)
       });
 
-      // Enhanced error handling
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        throw new Error('提案の生成に失敗しました');
       }
 
-      // Check if response has content
-      const text = await response.text();
-      if (!text) {
-        throw new Error('Empty response from server');
-      }
-
-      // Try to parse JSON
-      let result;
-      try {
-        result = JSON.parse(text);
-      } catch (parseError) {
-        console.error('JSON Parse Error:', parseError);
-        console.error('Response text:', text);
-        throw new Error('Invalid JSON response from server');
-      }
+      const result = await response.json();
       
       if (result.success) {
         setSuggestions(result.data);
-        setError(null); // Gemini API成功時はエラーをクリア
       } else {
         throw new Error(result.error || '提案の生成に失敗しました');
       }
     } catch (err) {
       console.error('Error generating suggestions:', err);
-      setError(`Gemini API エラー: ${err.message}`);
+      setError(err.message);
       
       // フォールバック: デモ用の模擬レスポンス
       const travelTime = calculateTravelTime(formData.departureTime, formData.arrivalTime);
       const mockSuggestions = generateMockSuggestions(formData, travelTime);
       setSuggestions(mockSuggestions);
-      
-      // フォールバック使用の通知
-      setTimeout(() => {
-        setError('Gemini APIに接続できませんが、デモ版の提案を表示しています');
-      }, 1000);
     } finally {
       setLoading(false);
     }
@@ -461,12 +440,12 @@ const JourneyPlannerApp = () => {
                   {loading ? (
                     <div className="flex items-center justify-center gap-2">
                       <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-                      Gemini AIが最適なプランを考えています...
+                      AIが最適なプランを考えています...
                     </div>
                   ) : (
                     <div className="flex items-center justify-center gap-2">
                       <Sparkles className="w-4 h-4" />
-                      Gemini AIで最適なプランを提案
+                      最適なプランを提案
                     </div>
                   )}
                 </button>
@@ -487,7 +466,7 @@ const JourneyPlannerApp = () => {
                   </div>
                   <p className="text-gray-500">
                     左のフォームに入力して、<br />
-                    Gemini AIにあなたにぴったりのプランを生成してもらいましょう！
+                    あなたにぴったりのプランを見つけましょう！
                   </p>
                 </div>
               ) : (
