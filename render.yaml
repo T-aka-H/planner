@@ -16,7 +16,7 @@ services:
       - key: GEMINI_API_KEY
         sync: false  # Renderダッシュボードで手動設定
       - key: FRONTEND_URL
-        value: https://planner-rfig.onrender.com  # 実際のURL
+        value: https://planner-backend-ee00.onrender.com  # 実際のURL
     
   # フロントエンド (静的サイト)
   - type: web
@@ -30,7 +30,7 @@ services:
     staticPublishPath: ./dist
     envVars:
       - key: VITE_API_URL
-        value: https://planner-backend-eksc.onrender.com  # 実際のURL
+        value: https://planner-frontend-5wwc.onrender.com  # 実際のURL
 
 # データベース (将来的に使用する場合)
 # databases:
