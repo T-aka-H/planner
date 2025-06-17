@@ -1,0 +1,40 @@
+services:
+  # バックエンド API
+  - type: web
+    name: planner-backend
+    env: node
+    plan: free
+    repo: https://github.com/T-aka-H/planner
+    branch: master
+    rootDir: backend  # ← これが重要！
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: GEMINI_API_KEY
+        sync: false  # Renderダッシュボードで手動設定
+      - key: FRONTEND_URL
+        value: https://planner-rfig.onrender.com  # 実際のURL
+    
+  # フロントエンド (静的サイト)
+  - type: web
+    name: planner-frontend
+    env: static
+    plan: free
+    repo: https://github.com/T-aka-H/planner
+    branch: master
+    rootDir: frontend/src  # フロントエンドのルートディレクトリ
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://planner-backend-eksc.onrender.com  # 実際のURL
+
+# データベース (将来的に使用する場合)
+# databases:
+#   - name: journey-ai-db
+#     databaseName: journey_ai
+#     user: journey_ai_user
+#     plan: free
