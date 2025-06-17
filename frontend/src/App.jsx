@@ -96,13 +96,18 @@ const JourneyPlannerApp = () => {
       });
 
       if (!response.ok) {
-        throw new Error('提案の生成に失敗しました');
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
       const result = await response.json();
       
-      if (result.success) {
-        setSuggestions(result.data);
+      if (result.success && result.data) {
+        // APIレスポンスの形式を確認し、安全に設定
+        const safeData = {
+          ...result.data,
+          suggestions: Array.isArray(result.data.suggestions) ? result.data.suggestions : []
+        };
+        setSuggestions(safeData);
       } else {
         throw new Error(result.error || '提案の生成に失敗しました');
       }
@@ -369,7 +374,7 @@ const JourneyPlannerApp = () => {
                   </label>
                   <div className="grid grid-cols-2 gap-2">
                     {moodOptions.map((mood) => {
-                      const Icon = mood.icon;
+                      const Icon = mood.icon || Heart; // フォールバック
                       const isSelected = formData.mood.includes(mood.id);
                       return (
                         <button
@@ -382,7 +387,7 @@ const JourneyPlannerApp = () => {
                           }`}
                         >
                           <div className="flex items-center gap-2">
-                            <Icon className="w-4 h-4" />
+                            {Icon && <Icon className="w-4 h-4" />}
                             <span className="text-sm font-medium">{mood.label}</span>
                           </div>
                         </button>
@@ -398,7 +403,7 @@ const JourneyPlannerApp = () => {
                   </label>
                   <div className="space-y-2">
                     {suggestionStyles.map((style) => {
-                      const Icon = style.icon;
+                      const Icon = style.icon || Sparkles; // フォールバック
                       const isSelected = formData.suggestionStyle === style.id;
                       return (
                         <button
@@ -411,7 +416,7 @@ const JourneyPlannerApp = () => {
                           }`}
                         >
                           <div className="flex items-center gap-3">
-                            <Icon className="w-5 h-5" />
+                            {Icon && <Icon className="w-5 h-5" />}
                             <div>
                               <div className="font-medium">{style.label}</div>
                               <div className="text-xs opacity-75">{style.description}</div>
@@ -484,9 +489,9 @@ const JourneyPlannerApp = () => {
                       </p>
                     )}
                     <div className="flex items-center gap-1 mt-2">
-                      {suggestions.style === 'safe' && <Shield className="w-3 h-3 text-green-600" />}
-                      {suggestions.style === 'balanced' && <Shuffle className="w-3 h-3 text-blue-600" />}
-                      {suggestions.style === 'creative' && <Zap className="w-3 h-3 text-purple-600" />}
+                      {suggestions.style === 'safe' ? <Shield className="w-3 h-3 text-green-600" /> : null}
+                      {suggestions.style === 'balanced' ? <Shuffle className="w-3 h-3 text-blue-600" /> : null}
+                      {suggestions.style === 'creative' ? <Zap className="w-3 h-3 text-purple-600" /> : null}
                       <span className="text-xs text-gray-500">
                         {suggestions.style === 'safe' && '安心・定番プラン'}
                         {suggestions.style === 'balanced' && 'バランスプラン'}
@@ -498,12 +503,12 @@ const JourneyPlannerApp = () => {
                   {/* 提案リスト */}
                   <div className="space-y-4">
                     {suggestions.suggestions.map((suggestion, index) => {
-                      const Icon = suggestion.icon;
+                      const Icon = suggestion.icon || Navigation; // フォールバック
                       return (
                         <div key={index} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
                           <div className="flex items-start gap-3">
                             <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                              <Icon className="w-5 h-5 text-blue-600" />
+                              {Icon && <Icon className="w-5 h-5 text-blue-600" />}
                             </div>
                             <div className="flex-1">
                               <div className="flex items-center gap-2 mb-1">
