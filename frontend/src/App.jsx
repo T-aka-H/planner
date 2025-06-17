@@ -53,7 +53,7 @@ const JourneyPlannerApp = () => {
       ...prev,
       [field]: value
     }));
-    setError(null); // エラーをクリア
+    setError(null);
   };
 
   const handleMoodToggle = (moodId) => {
@@ -73,7 +73,7 @@ const JourneyPlannerApp = () => {
     const [arrHour, arrMin] = arrival.split(':').map(Number);
     
     let totalMinutes = (arrHour * 60 + arrMin) - (depHour * 60 + depMin);
-    if (totalMinutes < 0) totalMinutes += 24 * 60; // 次の日の場合
+    if (totalMinutes < 0) totalMinutes += 24 * 60;
     
     const hours = Math.floor(totalMinutes / 60);
     const minutes = totalMinutes % 60;
@@ -81,12 +81,33 @@ const JourneyPlannerApp = () => {
     return { hours, minutes, totalMinutes };
   };
 
+  // アイコン名から実際のコンポーネントへのマッピング
+  const getIconComponent = (iconName) => {
+    const iconMap = {
+      BookOpen,
+      Coffee,
+      TreePine,
+      Navigation,
+      Camera,
+      ShoppingBag,
+      Music,
+      Heart
+    };
+    
+    if (typeof iconName === 'string') {
+      return iconMap[iconName] || Navigation;
+    }
+    
+    return iconName || Navigation;
+  };
+
   const generateSuggestions = async () => {
     setLoading(true);
     setError(null);
     
     try {
-      // 🔧 修正: バックエンドの絶対URLを使用（初期commit + バックエンド接続修正）
+      console.log('リクエストデータ:', formData);
+      
       const response = await fetch('https://planner-backend-ee00.onrender.com/api/generate-suggestions', {
         method: 'POST',
         headers: {
@@ -95,27 +116,28 @@ const JourneyPlannerApp = () => {
         body: JSON.stringify(formData)
       });
 
+      console.log('レスポンスステータス:', response.status);
+
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
       const result = await response.json();
+      console.log('Gemini APIレスポンス:', result);
       
       if (result.success && result.data) {
-        // APIレスポンスの形式を確認し、安全に設定
-        const safeData = {
-          ...result.data,
-          suggestions: Array.isArray(result.data.suggestions) ? result.data.suggestions : []
-        };
+        // レスポンスデータを安全に処理
+        const safeData = processSafeData(result.data);
+        console.log('処理後の安全なデータ:', safeData);
         setSuggestions(safeData);
       } else {
-        throw new Error(result.error || '提案の生成に失敗しました');
+        throw new Error(result.error || 'APIエラー');
       }
     } catch (err) {
       console.error('Error generating suggestions:', err);
-      setError(err.message);
+      setError(`エラー: ${err.message}`);
       
-      // フォールバック: デモ用の模擬レスポンス
+      // フォールバック
       const travelTime = calculateTravelTime(formData.departureTime, formData.arrivalTime);
       const mockSuggestions = generateMockSuggestions(formData, travelTime);
       setSuggestions(mockSuggestions);
@@ -124,13 +146,59 @@ const JourneyPlannerApp = () => {
     }
   };
 
+  // 安全なデータ処理関数
+  const processSafeData = (data) => {
+    if (!data || typeof data !== 'object') {
+      return generateDefaultSuggestions();
+    }
+
+    const safeSuggestions = [];
+    
+    if (Array.isArray(data.suggestions)) {
+      data.suggestions.forEach((suggestion, index) => {
+        if (suggestion && typeof suggestion === 'object') {
+          safeSuggestions.push({
+            type: String(suggestion.type || 'その他'),
+            name: String(suggestion.name || `提案 ${index + 1}`),
+            duration: String(suggestion.duration || '不明'),
+            description: String(suggestion.description || '詳細情報なし'),
+            icon: getIconComponent(suggestion.icon)
+          });
+        }
+      });
+    }
+
+    return {
+      travelTime: data.travelTime || null,
+      route: String(data.route || `${formData.departure} → ${formData.destination}`),
+      style: String(data.style || formData.suggestionStyle),
+      suggestions: safeSuggestions.length > 0 ? safeSuggestions : generateDefaultSuggestions().suggestions
+    };
+  };
+
+  const generateDefaultSuggestions = () => {
+    return {
+      travelTime: calculateTravelTime(formData.departureTime, formData.arrivalTime),
+      route: `${formData.departure} → ${formData.destination}`,
+      style: formData.suggestionStyle,
+      suggestions: [
+        {
+          type: '直行',
+          name: '目的地へ直行',
+          duration: '移動時間のみ',
+          description: '最適なプランを生成中です。しばらくお待ちください。',
+          icon: Navigation
+        }
+      ]
+    };
+  };
+
   const generateMockSuggestions = (data, travelTime) => {
-    const selectedMoods = data.mood;
-    const style = data.suggestionStyle;
+    const selectedMoods = data.mood || [];
+    const style = data.suggestionStyle || 'balanced';
     let suggestions = [];
 
     if (travelTime && travelTime.totalMinutes > 60) {
-      // 安全・定番スタイル
       if (style === 'safe') {
         if (selectedMoods.includes('cultural')) {
           suggestions.push({
@@ -150,122 +218,16 @@ const JourneyPlannerApp = () => {
             icon: Coffee
           });
         }
-        if (selectedMoods.includes('relaxed')) {
-          suggestions.push({
-            type: 'リラックス',
-            name: '公園での散歩',
-            duration: '30分',
-            description: '美しい自然に囲まれた公園でゆっくりと散歩を楽しみましょう。',
-            icon: TreePine
-          });
-        }
-      }
-      
-      // 冒険・ユニークスタイル
-      else if (style === 'creative') {
+      } else if (style === 'creative') {
         if (selectedMoods.includes('cultural')) {
           suggestions.push({
             type: '隠れ文化',
             name: '地下に眠る防空壕跡ツアー',
             duration: '60分',
-            description: '一般公開されていない戦時中の防空壕を地元ガイドと探検。歴史の生の痕跡を体感できます。',
+            description: '一般公開されていない戦時中の防空壕を地元ガイドと探検。',
             icon: BookOpen
           });
         }
-        if (selectedMoods.includes('foodie')) {
-          suggestions.push({
-            type: '秘密グルメ',
-            name: '常連だけが知る「裏メニュー」チャレンジ',
-            duration: '45分',
-            description: '看板にないメニューを頼むための暗号を解読。地元の人との会話が鍵になる謎解きグルメ体験。',
-            icon: Coffee
-          });
-        }
-        if (selectedMoods.includes('relaxed')) {
-          suggestions.push({
-            type: '異空間リラックス',
-            name: 'ビルの屋上養蜂場で瞑想',
-            duration: '40分',
-            description: '都心のビル屋上で蜂の羽音を聞きながら瞑想。都市と自然の境界線で究極のリラックス体験。',
-            icon: TreePine
-          });
-        }
-        if (selectedMoods.includes('adventurous')) {
-          suggestions.push({
-            type: '都市探検',
-            name: '地下街の迷宮巡り（GPS禁止）',
-            duration: '90分',
-            description: 'スマホを封印して地下街で意図的に迷子になる冒険。アナログ探検で隠された通路や秘密の店を発見。',
-            icon: Navigation
-          });
-        }
-        if (selectedMoods.includes('photo')) {
-          suggestions.push({
-            type: 'アングラ撮影',
-            name: '消えゆく職人技の記録撮影',
-            duration: '75分',
-            description: '活版印刷工房で最後の職人の手技を撮影。デジタル時代に失われつつある技術を一枚に収める貴重な体験。',
-            icon: Camera
-          });
-        }
-      }
-      
-      // バランススタイル
-      else {
-        if (selectedMoods.includes('cultural')) {
-          suggestions.push({
-            type: '文化体験',
-            name: '地域アーティストのアトリエ見学',
-            duration: '50分',
-            description: '地元で活動する現代アーティストの工房を訪問。作品制作の現場を見学し、創作過程について話を聞けます。',
-            icon: BookOpen
-          });
-        }
-        if (selectedMoods.includes('foodie')) {
-          suggestions.push({
-            type: 'ローカルグルメ',
-            name: '市場の隠れた名店巡り',
-            duration: '70分',
-            description: '観光ガイドに載らない市場の奥にある地元民御用達の店を巡る。本当の地域の味を発見できます。',
-            icon: Coffee
-          });
-        }
-        if (selectedMoods.includes('relaxed')) {
-          suggestions.push({
-            type: 'ユニーク癒し',
-            name: '古民家カフェでの読書時間',
-            duration: '45分',
-            description: '築100年の古民家を改装したカフェで、囲炉裏の音を聞きながら静かな読書時間を過ごします。',
-            icon: TreePine
-          });
-        }
-      }
-
-      if (selectedMoods.includes('shopping')) {
-        const shoppingSuggestion = style === 'creative' 
-          ? {
-              type: '謎解きショッピング',
-              name: '「商店街の七不思議」巡り',
-              duration: '80分',
-              description: '地元の商店街に隠された7つの謎を解きながらショッピング。最後に特別なご褒美が待っています。',
-              icon: ShoppingBag
-            }
-          : style === 'safe'
-          ? {
-              type: 'ショッピング',
-              name: '地元の商店街',
-              duration: '90分',
-              description: '個性的なお店が並ぶ商店街で、お土産探しはいかがですか。',
-              icon: ShoppingBag
-            }
-          : {
-              type: 'クラフトショッピング',
-              name: '職人の工房直売所巡り',
-              duration: '60分',
-              description: '伝統工芸品を作る職人の工房を訪れ、制作現場を見学しながら作品を購入できます。',
-              icon: ShoppingBag
-            };
-        suggestions.push(shoppingSuggestion);
       }
     }
 
@@ -289,6 +251,16 @@ const JourneyPlannerApp = () => {
     return formData.departure && formData.destination && 
            formData.departureTime && formData.arrivalTime && 
            formData.mood.length > 0;
+  };
+
+  const renderIcon = (IconComponent, className = "") => {
+    if (!IconComponent) return null;
+    try {
+      return React.createElement(IconComponent, { className });
+    } catch (error) {
+      console.error('Icon render error:', error);
+      return React.createElement(Navigation, { className });
+    }
   };
 
   return (
@@ -374,7 +346,6 @@ const JourneyPlannerApp = () => {
                   </label>
                   <div className="grid grid-cols-2 gap-2">
                     {moodOptions.map((mood) => {
-                      const Icon = mood.icon || Heart; // フォールバック
                       const isSelected = formData.mood.includes(mood.id);
                       return (
                         <button
@@ -387,7 +358,7 @@ const JourneyPlannerApp = () => {
                           }`}
                         >
                           <div className="flex items-center gap-2">
-                            {Icon && <Icon className="w-4 h-4" />}
+                            {renderIcon(mood.icon, "w-4 h-4")}
                             <span className="text-sm font-medium">{mood.label}</span>
                           </div>
                         </button>
@@ -403,7 +374,6 @@ const JourneyPlannerApp = () => {
                   </label>
                   <div className="space-y-2">
                     {suggestionStyles.map((style) => {
-                      const Icon = style.icon || Sparkles; // フォールバック
                       const isSelected = formData.suggestionStyle === style.id;
                       return (
                         <button
@@ -416,7 +386,7 @@ const JourneyPlannerApp = () => {
                           }`}
                         >
                           <div className="flex items-center gap-3">
-                            {Icon && <Icon className="w-5 h-5" />}
+                            {renderIcon(style.icon, "w-5 h-5")}
                             <div>
                               <div className="font-medium">{style.label}</div>
                               <div className="text-xs opacity-75">{style.description}</div>
@@ -482,7 +452,7 @@ const JourneyPlannerApp = () => {
                       <Clock className="w-4 h-4 text-blue-600" />
                       <span className="font-medium text-gray-800">旅程概要</span>
                     </div>
-                    <p className="text-sm text-gray-600 mb-1">{suggestions.route}</p>
+                    <p className="text-sm text-gray-600 mb-1">{suggestions.route || '旅程情報なし'}</p>
                     {suggestions.travelTime && (
                       <p className="text-sm text-gray-600 mb-1">
                         利用可能時間: {suggestions.travelTime.hours}時間{suggestions.travelTime.minutes}分
@@ -502,25 +472,24 @@ const JourneyPlannerApp = () => {
 
                   {/* 提案リスト */}
                   <div className="space-y-4">
-                    {suggestions.suggestions.map((suggestion, index) => {
-                      const Icon = suggestion.icon || Navigation; // フォールバック
+                    {(suggestions.suggestions || []).map((suggestion, index) => {
                       return (
-                        <div key={index} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                        <div key={`suggestion-${index}-${suggestion.name || index}`} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
                           <div className="flex items-start gap-3">
                             <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                              {Icon && <Icon className="w-5 h-5 text-blue-600" />}
+                              {renderIcon(suggestion.icon, "w-5 h-5 text-blue-600")}
                             </div>
                             <div className="flex-1">
                               <div className="flex items-center gap-2 mb-1">
-                                <h3 className="font-semibold text-gray-800">{suggestion.name}</h3>
+                                <h3 className="font-semibold text-gray-800">{suggestion.name || '名称不明'}</h3>
                                 <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full">
-                                  {suggestion.type}
+                                  {suggestion.type || 'その他'}
                                 </span>
                               </div>
-                              <p className="text-sm text-gray-600 mb-2">{suggestion.description}</p>
+                              <p className="text-sm text-gray-600 mb-2">{suggestion.description || '詳細情報なし'}</p>
                               <div className="flex items-center gap-1 text-xs text-gray-500">
                                 <Clock className="w-3 h-3" />
-                                <span>所要時間: {suggestion.duration}</span>
+                                <span>所要時間: {suggestion.duration || '不明'}</span>
                               </div>
                             </div>
                           </div>
