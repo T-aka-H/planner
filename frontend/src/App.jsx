@@ -271,7 +271,7 @@ const JourneyPlannerApp = () => {
                           className={`p-3 rounded-lg border-2 transition-all duration-200 ${
                             isSelected 
                               ? `${mood.color} border-current` 
-                              : 'bg-gray-200 border-gray-400 hover:bg-gray-300'
+                              : 'bg-gray-300 border-gray-500 hover:bg-gray-400 text-gray-700'
                           }`}
                         >
                           <div className="flex items-center gap-2">
@@ -300,7 +300,7 @@ const JourneyPlannerApp = () => {
                           className={`w-full p-3 rounded-lg border-2 transition-all duration-200 text-left ${
                             isSelected 
                               ? `${style.color} border-current` 
-                              : 'bg-gray-200 border-gray-400 hover:bg-gray-300'
+                              : 'bg-gray-300 border-gray-500 hover:bg-gray-400 text-gray-700'
                           }`}
                         >
                           <div className="flex items-center gap-3">
