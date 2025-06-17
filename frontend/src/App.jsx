@@ -18,31 +18,34 @@ const JourneyPlannerApp = () => {
     { 
       id: 'safe', 
       label: '定番・安心', 
+      icon: Shield,
       color: 'bg-green-100 text-green-700',
       description: '確実で安全な定番スポット'
     },
     { 
       id: 'balanced', 
       label: 'バランス', 
+      icon: Shuffle,
       color: 'bg-blue-100 text-blue-700',
       description: '定番とユニークのミックス'
     },
     { 
       id: 'creative', 
       label: '冒険・ユニーク', 
+      icon: Zap,
       color: 'bg-purple-100 text-purple-700',
       description: '意外性のある隠れた体験'
     }
   ];
 
   const moodOptions = [
-    { id: 'relaxed', label: 'リラックス', color: 'bg-green-100 text-green-700' },
-    { id: 'adventurous', label: '冒険したい', color: 'bg-blue-100 text-blue-700' },
-    { id: 'cultural', label: '文化に触れたい', color: 'bg-purple-100 text-purple-700' },
-    { id: 'foodie', label: 'グルメ気分', color: 'bg-orange-100 text-orange-700' },
-    { id: 'shopping', label: 'ショッピング', color: 'bg-pink-100 text-pink-700' },
-    { id: 'photo', label: '写真を撮りたい', color: 'bg-indigo-100 text-indigo-700' },
-    { id: 'music', label: '音楽を楽しみたい', color: 'bg-yellow-100 text-yellow-700' }
+    { id: 'relaxed', label: 'リラックス', icon: TreePine, color: 'bg-green-100 text-green-700' },
+    { id: 'adventurous', label: '冒険したい', icon: Navigation, color: 'bg-blue-100 text-blue-700' },
+    { id: 'cultural', label: '文化に触れたい', icon: BookOpen, color: 'bg-purple-100 text-purple-700' },
+    { id: 'foodie', label: 'グルメ気分', icon: Coffee, color: 'bg-orange-100 text-orange-700' },
+    { id: 'shopping', label: 'ショッピング', icon: ShoppingBag, color: 'bg-pink-100 text-pink-700' },
+    { id: 'photo', label: '写真を撮りたい', icon: Camera, color: 'bg-indigo-100 text-indigo-700' },
+    { id: 'music', label: '音楽を楽しみたい', icon: Music, color: 'bg-yellow-100 text-yellow-700' }
   ];
 
   const handleInputChange = (field, value) => {
@@ -103,24 +106,45 @@ const JourneyPlannerApp = () => {
       console.log('Gemini APIレスポンス:', result);
       
       if (result.success && result.data) {
-        // 完全に安全なデータ処理
-        const safeSuggestions = {
-          route: `${formData.departure} → ${formData.destination}`,
-          style: formData.suggestionStyle,
-          travelTime: calculateTravelTime(formData.departureTime, formData.arrivalTime),
-          suggestions: [
-            {
-              type: 'AI提案',
-              name: 'Gemini AIからの提案',
-              duration: '60分',
-              description: 'Gemini AIが生成した旅行提案が正常に受信されました。',
-            }
-          ]
-        };
+        // Gemini APIの実際のレスポンスを安全に処理
+        console.log('処理前のAPIデータ:', result.data);
         
-        // APIレスポンスをそのまま使わず、安全な形式で設定
-        setSuggestions(safeSuggestions);
+        let safeSuggestions;
+        
+        // APIからの実際のデータを試みる
+        if (result.data.suggestions && Array.isArray(result.data.suggestions)) {
+          const processedSuggestions = result.data.suggestions.map((suggestion, index) => ({
+            type: String(suggestion.type || 'AI提案'),
+            name: String(suggestion.name || `Gemini提案 ${index + 1}`),
+            duration: String(suggestion.duration || '60分'),
+            description: String(suggestion.description || 'Gemini AIからの提案'),
+          }));
+          
+          safeSuggestions = {
+            route: String(result.data.route || `${formData.departure} → ${formData.destination}`),
+            style: String(result.data.style || formData.suggestionStyle),
+            travelTime: result.data.travelTime || calculateTravelTime(formData.departureTime, formData.arrivalTime),
+            suggestions: processedSuggestions
+          };
+        } else {
+          // フォールバック（APIデータ形式が期待と違う場合）
+          safeSuggestions = {
+            route: `${formData.departure} → ${formData.destination}`,
+            style: formData.suggestionStyle,
+            travelTime: calculateTravelTime(formData.departureTime, formData.arrivalTime),
+            suggestions: [
+              {
+                type: 'AI提案',
+                name: 'Gemini AIからの提案',
+                duration: '60分',
+                description: 'Gemini AIが生成した旅行提案が正常に受信されました。',
+              }
+            ]
+          };
+        }
+        
         console.log('設定された提案データ:', safeSuggestions);
+        setSuggestions(safeSuggestions);
       } else {
         throw new Error(result.error || 'APIエラー');
       }
@@ -239,6 +263,7 @@ const JourneyPlannerApp = () => {
                   <div className="grid grid-cols-2 gap-2">
                     {moodOptions.map((mood) => {
                       const isSelected = formData.mood.includes(mood.id);
+                      const IconComponent = mood.icon;
                       return (
                         <button
                           key={mood.id}
@@ -250,6 +275,7 @@ const JourneyPlannerApp = () => {
                           }`}
                         >
                           <div className="flex items-center gap-2">
+                            {IconComponent && <IconComponent className="w-4 h-4" />}
                             <span className="text-sm font-medium">{mood.label}</span>
                           </div>
                         </button>
@@ -266,6 +292,7 @@ const JourneyPlannerApp = () => {
                   <div className="space-y-2">
                     {suggestionStyles.map((style) => {
                       const isSelected = formData.suggestionStyle === style.id;
+                      const IconComponent = style.icon;
                       return (
                         <button
                           key={style.id}
@@ -277,6 +304,7 @@ const JourneyPlannerApp = () => {
                           }`}
                         >
                           <div className="flex items-center gap-3">
+                            {IconComponent && <IconComponent className="w-5 h-5" />}
                             <div>
                               <div className="font-medium">{style.label}</div>
                               <div className="text-xs opacity-75">{style.description}</div>
@@ -305,12 +333,12 @@ const JourneyPlannerApp = () => {
                   {loading ? (
                     <div className="flex items-center justify-center gap-2">
                       <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-                      AIが最適なプランを考えています...
+                      Gemini AIが最適なプランを考えています...
                     </div>
                   ) : (
                     <div className="flex items-center justify-center gap-2">
                       <Sparkles className="w-4 h-4" />
-                      最適なプランを提案
+                      Gemini AIで最適なプランを提案
                     </div>
                   )}
                 </button>
@@ -349,6 +377,9 @@ const JourneyPlannerApp = () => {
                       </p>
                     )}
                     <div className="flex items-center gap-1 mt-2">
+                      {suggestions.style === 'safe' && <Shield className="w-3 h-3 text-green-600" />}
+                      {suggestions.style === 'balanced' && <Shuffle className="w-3 h-3 text-blue-600" />}
+                      {suggestions.style === 'creative' && <Zap className="w-3 h-3 text-purple-600" />}
                       <span className="text-xs text-gray-500">
                         {suggestions.style === 'safe' && '安心・定番プラン'}
                         {suggestions.style === 'balanced' && 'バランスプラン'}
