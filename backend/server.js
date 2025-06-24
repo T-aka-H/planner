@@ -177,7 +177,7 @@ const suggestionValidation = [
   body('suggestionStyle').isIn(['safe', 'balanced', 'creative']).withMessage('正しい提案スタイルを選択してください')
 ];
 
-// AI提案生成エンドポイント
+// AI提案生成エンドポイント（デバッグ版）
 app.post('/api/generate-suggestions', aiLimiter, suggestionValidation, async (req, res) => {
   try {
     // バリデーションエラーチェック
@@ -204,35 +204,66 @@ app.post('/api/generate-suggestions', aiLimiter, suggestionValidation, async (re
 
     let suggestions;
 
+    // デバッグログを追加
+    console.log('🔍 Debug Info:');
+    console.log('- GEMINI_API_KEY exists:', !!process.env.GEMINI_API_KEY);
+    console.log('- genAI object exists:', !!genAI);
+    console.log('- Request data:', { departure, destination, departureTime, arrivalTime, mood, suggestionStyle });
+
     // Gemini APIが利用可能な場合
     if (genAI) {
+      console.log('🤖 Attempting to use Gemini API...');
       try {
         const prompt = generatePrompt(req.body, travelTime);
+        console.log('📝 Generated prompt length:', prompt.length);
+        
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        console.log('🎯 Model initialized successfully');
         
         const result = await model.generateContent(prompt);
+        console.log('📡 API call completed');
+        
         const response = await result.response;
+        console.log('📨 Response received');
+        
         const text = response.text();
+        console.log('📄 Raw response text length:', text.length);
+        console.log('📄 Raw response preview:', text.substring(0, 200) + '...');
         
         // JSONレスポンスをパースして返す
-        const aiSuggestions = JSON.parse(text.replace(/```json\n?|\n?```/g, ''));
+        const cleanText = text.replace(/```json\n?|\n?```/g, '');
+        console.log('🧹 Cleaned text for parsing:', cleanText.substring(0, 200) + '...');
+        
+        const aiSuggestions = JSON.parse(cleanText);
+        console.log('✅ Successfully parsed AI suggestions:', aiSuggestions.suggestions?.length, 'suggestions');
         
         suggestions = {
           travelTime,
           route: `${departure} → ${destination}`,
           style: suggestionStyle,
-          ...aiSuggestions
+          ...aiSuggestions,
+          source: 'gemini-ai' // デバッグ用フラグ
         };
         
+        console.log('🎉 Using Gemini AI suggestions');
+        
       } catch (aiError) {
-        console.error('AI API Error:', aiError);
+        console.error('❌ AI API Error:', aiError.message);
+        console.error('❌ Full error:', aiError);
         // AI APIエラーの場合はフォールバックを使用
         suggestions = generateFallbackSuggestions(req.body, travelTime);
+        suggestions.source = 'fallback-after-error'; // デバッグ用フラグ
+        console.log('🔄 Using fallback suggestions due to AI error');
       }
     } else {
       // Gemini APIが利用できない場合はフォールバック
+      console.log('⚠️ Gemini API not available, using fallback');
       suggestions = generateFallbackSuggestions(req.body, travelTime);
+      suggestions.source = 'fallback-no-api'; // デバッグ用フラグ
     }
+    
+    console.log('📊 Final suggestions source:', suggestions.source);
+    console.log('📊 Final suggestions count:', suggestions.suggestions?.length);
     
     res.json({
       success: true,
@@ -240,7 +271,7 @@ app.post('/api/generate-suggestions', aiLimiter, suggestionValidation, async (re
     });
     
   } catch (error) {
-    console.error('Error generating suggestions:', error);
+    console.error('💥 Unexpected error generating suggestions:', error);
     res.status(500).json({ 
       success: false, 
       error: 'Internal server error'
@@ -253,15 +284,19 @@ function generateFallbackSuggestions(data, travelTime) {
   const { departure, destination, mood, suggestionStyle } = data;
   const suggestions = [];
 
+  // 時間のランダム性を追加してフォールバックでも少し変化をつける
+  const timestamp = Date.now();
+  const randomSeed = timestamp % 3;
+
   // 基本的なフォールバック提案
   if (travelTime.totalMinutes > 60) {
     if (mood.includes('cultural')) {
       suggestions.push({
         type: suggestionStyle === 'creative' ? '隠れ文化スポット' : '文化スポット',
-        name: suggestionStyle === 'creative' ? '地域の隠れた歴史スポット' : '地域の博物館・美術館',
+        name: suggestionStyle === 'creative' ? `地域の隠れた歴史スポット${randomSeed + 1}` : '地域の博物館・美術館',
         duration: '60分',
         description: suggestionStyle === 'creative' 
-          ? '観光ガイドには載っていない地元の歴史的な場所や建物を探索'
+          ? `観光ガイドには載っていない地元の歴史的な場所や建物を探索 (パターン${randomSeed + 1})`
           : '地域の歴史と文化に触れることができる博物館や美術館',
         address: `${departure}と${destination}の間のエリア`,
         coordinates: { lat: 35.6762, lng: 139.6503 }
@@ -326,7 +361,7 @@ function generateFallbackSuggestions(data, travelTime) {
         name: suggestionStyle === 'creative' ? '消えゆく職人技の記録撮影' : 'インスタ映えスポット巡り',
         duration: '60分',
         description: suggestionStyle === 'creative'
-          ? '伝統工芸の職人技を撮影する貴重な体験。デジタル時代に失われつつある技術を記録'
+          ? `伝統工芸の職人技を撮影する貴重な体験。デジタル時代に失われつつある技術を記録 (生成時刻: ${new Date().toLocaleTimeString()})`
           : '人気のフォトスポットで思い出の写真を撮影',
         address: `${departure}と${destination}の間のエリア`,
         coordinates: { lat: 35.6762, lng: 139.6503 }
@@ -353,7 +388,7 @@ function generateFallbackSuggestions(data, travelTime) {
       type: '移動時間活用',
       name: '移動中の特別体験',
       duration: `${travelTime.minutes}分`,
-      description: '限られた時間を有効活用する移動中の楽しみ方を提案',
+      description: `限られた時間を有効活用する移動中の楽しみ方を提案 (${new Date().toLocaleTimeString()})`,
       address: '移動ルート上',
       coordinates: { lat: 35.6762, lng: 139.6503 }
     });
