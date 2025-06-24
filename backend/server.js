@@ -85,7 +85,105 @@ function calculateTravelTime(departure, arrival) {
   return { hours, minutes, totalMinutes };
 }
 
-// AI提案生成エンドポイント（JSON パース修正版）
+// 改良されたプロンプト生成関数
+function generatePrompt(data, travelTime) {
+  const { departure, destination, departureTime, arrivalTime, mood, suggestionStyle } = data;
+  
+  let stylePrompt = '';
+  
+  switch(suggestionStyle) {
+    case 'safe':
+      stylePrompt = `
+安全で確実な定番の提案をしてください：
+- 有名で評価の高い観光スポット
+- 営業時間が確実で、アクセスしやすい場所
+- 一般的にお勧めされている体験
+- 失敗のリスクが低い選択肢
+- 初心者でも楽しめる安心できる場所
+`;
+      break;
+      
+    case 'creative':
+      stylePrompt = `
+クリエイティブで意外性のある提案をしてください：
+- 地元の人しか知らない隠れスポット
+- 常識を破るユニークな体験
+- 一風変わった文化的体験
+- SNSでは見つからない特別な場所
+- 参加型・体験型の活動
+- 少しの冒険心が必要な提案
+- 記憶に残る特別な体験
+- 従来の観光とは一線を画した体験
+`;
+      break;
+      
+    case 'balanced':
+    default:
+      stylePrompt = `
+定番とユニークのバランスの取れた提案をしてください：
+- 安全だが少し特別感のある体験
+- 地元色豊かだが アクセスしやすい場所
+- 観光客向けではない地元の良いスポット
+- 適度な新鮮さと安心感を両立
+- 少し知る人ぞ知るスポット
+`;
+      break;
+  }
+  
+  return `
+以下の情報に基づいて、最適な旅程を提案してください：
+
+出発地: ${departure}
+目的地: ${destination}
+出発時刻: ${departureTime}
+到着希望時刻: ${arrivalTime}
+利用可能時間: ${travelTime.hours}時間${travelTime.minutes}分
+気分: ${mood.join(', ')}
+
+${stylePrompt}
+
+条件：
+1. 実在する場所やスポットを提案する
+2. 移動時間も考慮する（電車や徒歩での移動時間を含む）
+3. 選択された気分に合致する活動
+4. 時間内に完了可能な内容
+5. 具体的な住所と説明を含める
+6. 現実的で実行可能な提案
+7. 季節や天候を考慮した提案
+
+**重要**: 必ず有効なJSON形式でのみ回答してください。JSON以外のテキストは一切含めないでください。
+
+以下の厳密なJSON形式で出力してください：
+
+{
+  "suggestions": [
+    {
+      "type": "カテゴリー",
+      "name": "スポット名",
+      "duration": "所要時間",
+      "description": "魅力的で具体的な説明（100文字程度）",
+      "address": "具体的な住所",
+      "coordinates": {"lat": 緯度, "lng": 経度},
+      "tips": "実際に行く際のコツやアドバイス（オプション）"
+    }
+  ]
+}
+
+JSONの開始は { で、終了は } です。JSON以外のコメントや説明は含めないでください。
+`;
+}
+
+// バリデーションルール
+const suggestionValidation = [
+  body('departure').trim().notEmpty().withMessage('出発地は必須です'),
+  body('destination').trim().notEmpty().withMessage('目的地は必須です'),
+  body('departureTime').matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/).withMessage('正しい出発時刻を入力してください'),
+  body('arrivalTime').matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/).withMessage('正しい到着時刻を入力してください'),
+  body('mood').isArray({ min: 1 }).withMessage('気分を少なくとも1つ選択してください'),
+  body('suggestionStyle').isIn(['safe', 'balanced', 'creative']).withMessage('正しい提案スタイルを選択してください')
+];
+
+// AI提案生成エンドポイント（完全修正版）
 app.post('/api/generate-suggestions', aiLimiter, suggestionValidation, async (req, res) => {
   try {
     // バリデーションエラーチェック
@@ -205,104 +303,6 @@ app.post('/api/generate-suggestions', aiLimiter, suggestionValidation, async (re
     });
   }
 });
-
-// より堅牢なプロンプト生成（JSONフォーマットを強調）
-function generatePrompt(data, travelTime) {
-  const { departure, destination, departureTime, arrivalTime, mood, suggestionStyle } = data;
-  
-  let stylePrompt = '';
-  
-  switch(suggestionStyle) {
-    case 'safe':
-      stylePrompt = `
-安全で確実な定番の提案をしてください：
-- 有名で評価の高い観光スポット
-- 営業時間が確実で、アクセスしやすい場所
-- 一般的にお勧めされている体験
-- 失敗のリスクが低い選択肢
-- 初心者でも楽しめる安心できる場所
-`;
-      break;
-      
-    case 'creative':
-      stylePrompt = `
-クリエイティブで意外性のある提案をしてください：
-- 地元の人しか知らない隠れスポット
-- 常識を破るユニークな体験
-- 一風変わった文化的体験
-- SNSでは見つからない特別な場所
-- 参加型・体験型の活動
-- 少しの冒険心が必要な提案
-- 記憶に残る特別な体験
-- 従来の観光とは一線を画した体験
-`;
-      break;
-      
-    case 'balanced':
-    default:
-      stylePrompt = `
-定番とユニークのバランスの取れた提案をしてください：
-- 安全だが少し特別感のある体験
-- 地元色豊かだが アクセスしやすい場所
-- 観光客向けではない地元の良いスポット
-- 適度な新鮮さと安心感を両立
-- 少し知る人ぞ知るスポット
-`;
-      break;
-  }
-  
-  return `
-以下の情報に基づいて、最適な旅程を提案してください：
-
-出発地: ${departure}
-目的地: ${destination}
-出発時刻: ${departureTime}
-到着希望時刻: ${arrivalTime}
-利用可能時間: ${travelTime.hours}時間${travelTime.minutes}分
-気分: ${mood.join(', ')}
-
-${stylePrompt}
-
-条件：
-1. 実在する場所やスポットを提案する
-2. 移動時間も考慮する（電車や徒歩での移動時間を含む）
-3. 選択された気分に合致する活動
-4. 時間内に完了可能な内容
-5. 具体的な住所と説明を含める
-6. 現実的で実行可能な提案
-7. 季節や天候を考慮した提案
-
-**重要**: 必ず有効なJSON形式でのみ回答してください。JSON以外のテキストは一切含めないでください。
-
-以下の厳密なJSON形式で出力してください：
-
-{
-  "suggestions": [
-    {
-      "type": "カテゴリー",
-      "name": "スポット名",
-      "duration": "所要時間",
-      "description": "魅力的で具体的な説明（100文字程度）",
-      "address": "具体的な住所",
-      "coordinates": {"lat": 緯度, "lng": 経度},
-      "tips": "実際に行く際のコツやアドバイス（オプション）"
-    }
-  ]
-}
-
-JSONの開始は { で、終了は } です。JSON以外のコメントや説明は含めないでください。
-`;
-}
-
-// バリデーションルール
-const suggestionValidation = [
-  body('departure').trim().notEmpty().withMessage('出発地は必須です'),
-  body('destination').trim().notEmpty().withMessage('目的地は必須です'),
-  body('departureTime').matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/).withMessage('正しい出発時刻を入力してください'),
-  body('arrivalTime').matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/).withMessage('正しい到着時刻を入力してください'),
-  body('mood').isArray({ min: 1 }).withMessage('気分を少なくとも1つ選択してください'),
-  body('suggestionStyle').isIn(['safe', 'balanced', 'creative']).withMessage('正しい提案スタイルを選択してください')
-];
 
 // フォールバック提案生成関数
 function generateFallbackSuggestions(data, travelTime) {
