@@ -12,6 +12,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const app = express();
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 10000;
 
 // セキュリティとパフォーマンスのミドルウェア
@@ -84,7 +85,128 @@ function calculateTravelTime(departure, arrival) {
   return { hours, minutes, totalMinutes };
 }
 
-// プロンプト生成関数
+// AI提案生成エンドポイント（JSON パース修正版）
+app.post('/api/generate-suggestions', aiLimiter, suggestionValidation, async (req, res) => {
+  try {
+    // バリデーションエラーチェック
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation failed',
+        details: errors.array()
+      });
+    }
+
+    const { departure, destination, departureTime, arrivalTime, mood, suggestionStyle } = req.body;
+    
+    // 移動時間を計算
+    const travelTime = calculateTravelTime(departureTime, arrivalTime);
+    
+    if (!travelTime || travelTime.totalMinutes < 0) {
+      return res.status(400).json({
+        success: false,
+        error: '到着時刻が出発時刻より前になっています'
+      });
+    }
+
+    let suggestions;
+
+    // Gemini APIが利用可能な場合
+    if (genAI) {
+      try {
+        const prompt = generatePrompt(req.body, travelTime);
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        
+        console.log('🤖 Calling Gemini API...');
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        const text = response.text();
+        
+        console.log('📄 Raw response length:', text.length);
+        console.log('📄 Raw response preview:', text.substring(0, 300));
+        
+        // より堅牢なJSON抽出
+        let cleanText = text;
+        
+        // コードブロックを削除
+        cleanText = cleanText.replace(/```json\s*/g, '').replace(/```\s*/g, '');
+        
+        // JSONの開始と終了を見つける
+        const jsonStart = cleanText.indexOf('{');
+        const jsonEnd = cleanText.lastIndexOf('}');
+        
+        if (jsonStart === -1 || jsonEnd === -1 || jsonStart >= jsonEnd) {
+          throw new Error('Valid JSON structure not found in response');
+        }
+        
+        // JSON部分のみを抽出
+        const jsonString = cleanText.substring(jsonStart, jsonEnd + 1);
+        console.log('🧹 Extracted JSON:', jsonString.substring(0, 200) + '...');
+        
+        let aiSuggestions;
+        try {
+          aiSuggestions = JSON.parse(jsonString);
+        } catch (parseError) {
+          console.log('❌ First parse attempt failed, trying with cleanup...');
+          
+          // より積極的なクリーンアップ
+          let cleanedJson = jsonString
+            .replace(/\n\s*\n/g, '\n')  // 空行を削除
+            .replace(/,\s*}/g, '}')     // trailing commasを削除
+            .replace(/,\s*]/g, ']')     // trailing commasを削除
+            .trim();
+          
+          console.log('🧹 Cleaned JSON attempt:', cleanedJson.substring(0, 200) + '...');
+          aiSuggestions = JSON.parse(cleanedJson);
+        }
+        
+        // 提案データの検証
+        if (!aiSuggestions || !aiSuggestions.suggestions || !Array.isArray(aiSuggestions.suggestions)) {
+          throw new Error('Invalid suggestions structure in AI response');
+        }
+        
+        suggestions = {
+          travelTime,
+          route: `${departure} → ${destination}`,
+          style: suggestionStyle,
+          ...aiSuggestions,
+          source: 'gemini-ai'
+        };
+        
+        console.log('✅ Successfully parsed AI suggestions:', aiSuggestions.suggestions.length, 'items');
+        
+      } catch (aiError) {
+        console.error('❌ AI API Error:', aiError.message);
+        console.error('❌ Error details:', aiError);
+        
+        // AI APIエラーの場合はフォールバックを使用
+        suggestions = generateFallbackSuggestions(req.body, travelTime);
+        suggestions.source = 'fallback-ai-error';
+        console.log('🔄 Using fallback due to AI error');
+      }
+    } else {
+      // Gemini APIが利用できない場合はフォールバック
+      suggestions = generateFallbackSuggestions(req.body, travelTime);
+      suggestions.source = 'fallback-no-api';
+      console.log('⚠️ No Gemini API, using fallback');
+    }
+    
+    res.json({
+      success: true,
+      data: suggestions
+    });
+    
+  } catch (error) {
+    console.error('💥 Unexpected error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Internal server error'
+    });
+  }
+});
+
+// より堅牢なプロンプト生成（JSONフォーマットを強調）
 function generatePrompt(data, travelTime) {
   const { departure, destination, departureTime, arrivalTime, mood, suggestionStyle } = data;
   
@@ -150,7 +272,10 @@ ${stylePrompt}
 6. 現実的で実行可能な提案
 7. 季節や天候を考慮した提案
 
-JSON形式で出力してください：
+**重要**: 必ず有効なJSON形式でのみ回答してください。JSON以外のテキストは一切含めないでください。
+
+以下の厳密なJSON形式で出力してください：
+
 {
   "suggestions": [
     {
@@ -164,6 +289,8 @@ JSON形式で出力してください：
     }
   ]
 }
+
+JSONの開始は { で、終了は } です。JSON以外のコメントや説明は含めないでください。
 `;
 }
 
@@ -176,108 +303,6 @@ const suggestionValidation = [
   body('mood').isArray({ min: 1 }).withMessage('気分を少なくとも1つ選択してください'),
   body('suggestionStyle').isIn(['safe', 'balanced', 'creative']).withMessage('正しい提案スタイルを選択してください')
 ];
-
-// AI提案生成エンドポイント（デバッグ版）
-app.post('/api/generate-suggestions', aiLimiter, suggestionValidation, async (req, res) => {
-  try {
-    // バリデーションエラーチェック
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        error: 'Validation failed',
-        details: errors.array()
-      });
-    }
-
-    const { departure, destination, departureTime, arrivalTime, mood, suggestionStyle } = req.body;
-    
-    // 移動時間を計算
-    const travelTime = calculateTravelTime(departureTime, arrivalTime);
-    
-    if (!travelTime || travelTime.totalMinutes < 0) {
-      return res.status(400).json({
-        success: false,
-        error: '到着時刻が出発時刻より前になっています'
-      });
-    }
-
-    let suggestions;
-
-    // デバッグログを追加
-    console.log('🔍 Debug Info:');
-    console.log('- GEMINI_API_KEY exists:', !!process.env.GEMINI_API_KEY);
-    console.log('- genAI object exists:', !!genAI);
-    console.log('- Request data:', { departure, destination, departureTime, arrivalTime, mood, suggestionStyle });
-
-    // Gemini APIが利用可能な場合
-    if (genAI) {
-      console.log('🤖 Attempting to use Gemini API...');
-      try {
-        const prompt = generatePrompt(req.body, travelTime);
-        console.log('📝 Generated prompt length:', prompt.length);
-        
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-        console.log('🎯 Model initialized successfully');
-        
-        const result = await model.generateContent(prompt);
-        console.log('📡 API call completed');
-        
-        const response = await result.response;
-        console.log('📨 Response received');
-        
-        const text = response.text();
-        console.log('📄 Raw response text length:', text.length);
-        console.log('📄 Raw response preview:', text.substring(0, 200) + '...');
-        
-        // JSONレスポンスをパースして返す
-        const cleanText = text.replace(/```json\n?|\n?```/g, '');
-        console.log('🧹 Cleaned text for parsing:', cleanText.substring(0, 200) + '...');
-        
-        const aiSuggestions = JSON.parse(cleanText);
-        console.log('✅ Successfully parsed AI suggestions:', aiSuggestions.suggestions?.length, 'suggestions');
-        
-        suggestions = {
-          travelTime,
-          route: `${departure} → ${destination}`,
-          style: suggestionStyle,
-          ...aiSuggestions,
-          source: 'gemini-ai' // デバッグ用フラグ
-        };
-        
-        console.log('🎉 Using Gemini AI suggestions');
-        
-      } catch (aiError) {
-        console.error('❌ AI API Error:', aiError.message);
-        console.error('❌ Full error:', aiError);
-        // AI APIエラーの場合はフォールバックを使用
-        suggestions = generateFallbackSuggestions(req.body, travelTime);
-        suggestions.source = 'fallback-after-error'; // デバッグ用フラグ
-        console.log('🔄 Using fallback suggestions due to AI error');
-      }
-    } else {
-      // Gemini APIが利用できない場合はフォールバック
-      console.log('⚠️ Gemini API not available, using fallback');
-      suggestions = generateFallbackSuggestions(req.body, travelTime);
-      suggestions.source = 'fallback-no-api'; // デバッグ用フラグ
-    }
-    
-    console.log('📊 Final suggestions source:', suggestions.source);
-    console.log('📊 Final suggestions count:', suggestions.suggestions?.length);
-    
-    res.json({
-      success: true,
-      data: suggestions
-    });
-    
-  } catch (error) {
-    console.error('💥 Unexpected error generating suggestions:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Internal server error'
-    });
-  }
-});
 
 // フォールバック提案生成関数
 function generateFallbackSuggestions(data, travelTime) {
